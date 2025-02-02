@@ -1,4 +1,5 @@
-Guía de Instalación Completa
+# Guía de Instalación Completa
+
 1. Preparación del Medio de Instalación:
 
 Descargar Arch Linux ISO
@@ -7,21 +8,22 @@ Grabar ISO en USB con Rufus/balenaEtcher (modo DD)
 
 Arrancar desde el USB
 
+
 2. Conexión a Internet:
 
-bash
-Copy
 iwctl # Para Wi-Fi
 station wlan0 connect "SSID"
 dhcpcd # Para cable
 ping archlinux.org # Verificar conexión
+
+
 3. Ejecución del Instalador:
 
-bash
-Copy
-curl -O https://raw.githubusercontent.com/usuario/archdroid-ai/main/installer.sh
+curl -O https://raw.githubusercontent.com/OverLord-Git/archdroid/refs/heads/main/installer.sh
 chmod +x installer.sh
 ./installer.sh
+
+
 4. Proceso Automático:
 
 El script realizará:
@@ -40,6 +42,8 @@ Optimizaciones de rendimiento
 
 Reinicio automático al finalizar
 
+
+
 5. Primer Inicio:
 
 Usuario: archdroid
@@ -49,6 +53,8 @@ Contraseña: 1
 Root Password: 1
 
 Acceso sudo sin contraseña
+
+
 
 6. Características Clave:
 
@@ -64,10 +70,10 @@ Actualizaciones automáticas habilitadas
 
 Firewall básico configurado
 
+
+
 7. Comandos Post-Instalación Útiles:
 
-bash
-Copy
 # Actualizar sistema
 sudo pacman -Syu
 

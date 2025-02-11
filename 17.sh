@@ -67,72 +67,65 @@ pacstrap /mnt base sudo linux-zen linux-zen-headers linux-firmware git
 echo -e "${YELLOW}→ Configurando sistema...${NC}"
 genfstab -U /mnt >> /mnt/etc/fstab
 
-arch-chroot /mnt /bin/bash <<EOF
-# --- Configuración básica ---
-echo "archdroid" > /etc/hostname
-ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
-
 # --- Creación interactiva de usuario ---
 read -p "Introduce el nombre de usuario: " USERNAME
-useradd -m -G wheel "\$USERNAME"
-echo -e "${YELLOW}→ Estableciendo contraseña para \$USERNAME...${NC}"
-passwd "\$USERNAME"
+arch-chroot /mnt useradd -m -G wheel "$USERNAME"
+echo -e "${YELLOW}→ Estableciendo contraseña para $USERNAME...${NC}"
+arch-chroot /mnt passwd "$USERNAME"
 
 # --- Configurar sudo sin contraseña ---
 echo -e "${YELLOW}→ Configurando privilegios sudo...${NC}"
-echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/10-wheel-nopasswd
-chmod 440 /etc/sudoers.d/10-wheel-nopasswd
+echo '%wheel ALL=(ALL) NOPASSWD: ALL' | tee /mnt/etc/sudoers.d/10-wheel-nopasswd > /dev/null
+chmod 440 /mnt/etc/sudoers.d/10-wheel-nopasswd
 
 # --- Instalar yay como usuario normal ---
 echo -e "${YELLOW}→ Instalando yay desde AUR...${NC}"
-sudo -u "\$USERNAME" git clone https://aur.archlinux.org/yay.git /tmp/yay
-cd /tmp/yay
-sudo -u "\$USERNAME" makepkg -si --noconfirm
+arch-chroot /mnt sudo -u "$USERNAME" git clone https://aur.archlinux.org/yay.git /tmp/yay
+arch-chroot /mnt bash -c "cd /tmp/yay && sudo -u $USERNAME makepkg -si --noconfirm"
 
 # --- Paquetes principales ---
 echo -e "${YELLOW}→ Instalando componentes del sistema...${NC}"
-yay -Syu --noconfirm --needed \\
-  calamares gnome gnome-tweaks gnome-shell-extensions \\
-  waydroid mesa vulkan-intel flatpak appimagelauncher \\
+arch-chroot /mnt yay -Syu --noconfirm --needed \
+  calamares gnome gnome-tweaks gnome-shell-extensions \
+  waydroid mesa vulkan-intel flatpak appimagelauncher \
   zram-generator tensorflow python-rasa
 
 # --- Configurar GNOME ---
 echo -e "${YELLOW}→ Personalizando entorno GNOME...${NC}"
-sudo -u "\$USERNAME" dbus-launch gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita-dark'
-sudo -u "\$USERNAME" dbus-launch gsettings set org.gnome.shell.extensions.dash-to-panel panel-position 'BOTTOM'
-sudo -u "\$USERNAME" dbus-launch gsettings set org.gnome.shell.extensions.arc-menu menu-layout 'Eleven'
+arch-chroot /mnt sudo -u "$USERNAME" dbus-launch gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita-dark'
+arch-chroot /mnt sudo -u "$USERNAME" dbus-launch gsettings set org.gnome.shell.extensions.dash-to-panel panel-position 'BOTTOM'
+arch-chroot /mnt sudo -u "$USERNAME" dbus-launch gsettings set org.gnome.shell.extensions.arc-menu menu-layout 'Eleven'
 
 # --- Configurar Android ---
 echo -e "${YELLOW}→ Habilitando soporte para Android...${NC}"
-echo "binder_linux" > /etc/modules-load.d/binder.conf
-echo "loop" > /etc/modules-load.d/loop.conf
+echo "binder_linux" | tee /mnt/etc/modules-load.d/binder.conf > /dev/null
+echo "loop" | tee /mnt/etc/modules-load.d/loop.conf > /dev/null
 
 # --- Optimización de memoria ---
 echo -e "${YELLOW}→ Configurando zRAM...${NC}"
-systemctl enable systemd-zram-setup@zram0
-echo "vm.swappiness=10" >> /etc/sysctl.d/99-archdroid.conf
+arch-chroot /mnt systemctl enable systemd-zram-setup@zram0
+echo "vm.swappiness=10" | tee /mnt/etc/sysctl.d/99-archdroid.conf > /dev/null
 
 # --- Instalar GRUB ---
 echo -e "${YELLOW}→ Configurando gestor de arranque...${NC}"
 if [[ "$BOOT_MODE" == "UEFI" ]]; then
-  grub-install --target=x86_64-efi --efi-directory=/boot/efi
+  arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi
 else
-  grub-install --target=i386-pc "/dev/$DISK"
+  arch-chroot /mnt grub-install --target=i386-pc "/dev/$DISK"
 fi
-grub-mkconfig -o /boot/grub/grub.cfg
+arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg
 
 # --- Google Play Store (opcional) ---
 read -p "¿Instalar Google Play Store? (s/n): " USE_GAPPS
-if [[ "\$USE_GAPPS" == "s" ]]; then
+if [[ "$USE_GAPPS" == "s" ]]; then
   echo -e "${YELLOW}→ Configurando Waydroid con GAPPS...${NC}"
-  yay -S --noconfirm waydroid-models
-  waydroid init -s GAPPS -f
+  arch-chroot /mnt yay -S --noconfirm waydroid-models
+  arch-chroot /mnt waydroid init -s GAPPS -f
 fi
 
 # --- Limpieza final ---
 echo -e "${YELLOW}→ Eliminando archivos temporales...${NC}"
-yay -Scc --noconfirm
-rm -rf /tmp/*
-EOF
+arch-chroot /mnt yay -Scc --noconfirm
+rm -rf /mnt/tmp/*
 
 echo -e "\n${GREEN}✓ Instalación completada. Reinicia con: 'reboot'${NC}"

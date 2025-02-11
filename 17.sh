@@ -61,7 +61,7 @@ fi
 
 # --- Instalación base ---
 echo -e "${YELLOW}→ Instalando sistema base...${NC}"
-pacstrap /mnt base sudo linux-zen linux-zen-headers linux-firmware git
+pacstrap /mnt base sudo linux-zen linux-zen-headers linux-firmware git pkgconf fakeroot
 
 # --- Configuración post-instalación ---
 echo -e "${YELLOW}→ Configurando sistema...${NC}"

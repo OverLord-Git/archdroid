@@ -62,7 +62,7 @@ fi
 
 # --- Instalación base ---
 echo -e "${YELLOW}→ Instalando sistema base...${NC}"
-pacstrap /mnt base linux-zen linux-zen-headers linux-firmware git
+pacstrap /mnt base sudo linux-zen linux-zen-headers linux-firmware git
 
 # --- Configuración post-instalación ---
 echo -e "${YELLOW}→ Configurando sistema...${NC}"
@@ -73,11 +73,22 @@ arch-chroot /mnt /bin/bash <<EOF
 echo "archdroid" > /etc/hostname
 ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
 
+# --- Crear usuario y configurar sudo sin contraseña ---
+read -p "Introduce el nombre de usuario: " USERNAME
+useradd -m -G wheel "\$USERNAME"
+echo -e "${YELLOW}→ Estableciendo contraseña para \$USERNAME...${NC}"
+passwd "\$USERNAME"
+
+# Habilitar sudo sin contraseña para wheel
+echo -e "${YELLOW}→ Configurando sudo...${NC}"
+echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel-nopasswd
+chmod 0440 /etc/sudoers.d/wheel-nopasswd
+
 # Instalar yay desde Git
 echo -e "${YELLOW}→ Instalando yay...${NC}"
 git clone https://aur.archlinux.org/yay.git /tmp/yay
 cd /tmp/yay
-makepkg -si --noconfirm
+sudo -u "\$USERNAME" makepkg -si --noconfirm
 
 # Paquetes esenciales
 echo -e "${YELLOW}→ Instalando componentes clave...${NC}"
@@ -89,9 +100,9 @@ yay -Syu --noconfirm --needed \\
 # Temas y extensiones de GNOME
 echo -e "${YELLOW}→ Configurando GNOME...${NC}"
 yay -S --noconfirm gnome-shell-extension-dash-to-panel gnome-shell-extension-arc-menu adwaita-icon-theme
-sudo -u archdroid dbus-launch gsettings set org.gnome.desktop.interface gtk-theme "Adwaita-dark"
-sudo -u archdroid dbus-launch gsettings set org.gnome.shell.extensions.dash-to-panel panel-position 'BOTTOM'
-sudo -u archdroid dbus-launch gsettings set org.gnome.shell.extensions.arc-menu menu-layout 'Eleven'
+sudo -u "\$USERNAME" dbus-launch gsettings set org.gnome.desktop.interface gtk-theme "Adwaita-dark"
+sudo -u "\$USERNAME" dbus-launch gsettings set org.gnome.shell.extensions.dash-to-panel panel-position 'BOTTOM'
+sudo -u "\$USERNAME" dbus-launch gsettings set org.gnome.shell.extensions.arc-menu menu-layout 'Eleven'
 
 # Configurar Binder y módulos
 echo -e "${YELLOW}→ Habilitando soporte para Android...${NC}"

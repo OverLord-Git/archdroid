@@ -1,83 +1,128 @@
 #!/bin/bash
+set -euo pipefail
 
-# Configuración inicial del entorno
-echo -e "\e[32mActualizando el sistema...\e[0m"
-sudo pacman -Syu --noconfirm
+# --- Configuración de colores ---
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
 
-# Activación de repositorios adicionales en /etc/pacman.conf
-if ! grep -q "^[ ]*[\[]CachyOS[\]]" /etc/pacman.conf; then
-    echo -e "\e[32mAgregando repositorio CachyOS...\e[0m"
-    sudo tee -a /etc/pacman.conf <<< "[cachyos]
-Include = https://raw.githubusercontent.com/cachy-os/cachyos-pacman/master/cachyos.list"
+# --- Detección de hardware ---
+echo -e "${YELLOW}→ Detectando modo de arranque...${NC}"
+if [ -d /sys/firmware/efi ]; then
+  BOOT_MODE="UEFI"
+else
+  BOOT_MODE="BIOS"
+fi
+echo -e "Modo detectado: ${GREEN}${BOOT_MODE}${NC}"
 
+# --- Selección de disco ---
+echo -e "${YELLOW}→ Discos disponibles:${NC}"
+lsblk -d -o NAME,SIZE,TYPE,MODEL | grep -E 'disk|nvme'
+read -p "Introduce el dispositivo (ej: nvme0n1, sda): " DISK
+
+# Validar disco NVMe
+if [[ "$DISK" =~ ^nvme ]]; then
+  DISK_PATH="/dev/${DISK}p"
+else
+  DISK_PATH="/dev/${DISK}"
 fi
 
-if ! grep -q "^[ ]*[\[]multilib[\]]" /etc/pacman.conf; then
-    echo -e "\e[32mAgregando repositorio Multilib...\e[0m"
-    sudo tee -a /etc/pacman.conf <<< "[multilib]
-Include = https://raw.githubusercontent.com/LinFest/linfest-pacaurio/master/mirrorlist.txt"
-
+# --- Cifrado LUKS (opcional) ---
+read -p "¿Cifrar disco? (s/n): " USE_LUKS
+if [[ "$USE_LUKS" == "s" ]]; then
+  echo -e "${YELLOW}→ Configurando LUKS...${NC}"
+  cryptsetup luksFormat "${DISK_PATH}2"
+  cryptsetup open "${DISK_PATH}2" archdroid_crypt
+  ROOT_PART="/dev/mapper/archdroid_crypt"
+else
+  ROOT_PART="${DISK_PATH}2"
 fi
 
-# Actualizar los repositories
-sudo pacman -Syy --noconfirm
-
-# Instalar herramientas básicas y dependencias
-echo -e "\e[32mInstalando dependencias necesarias...\e[0m"
-sudo pacman -S python python-pip flatpak yay wine steam android-sdk android-studio --noconfirm
-
-# Configuración de Flatpak
-echo -e "\e[32mConfigurando Flatpak...\e[0m"
-flatpak install flathub org.gnome.Platform/42 org.kde.Platform/5.26 \
-    org.apache.cordova.HelloWorld org.fedoraproject.SimpleApp
-
-# Configuración de DeepSeek y Chatbot en GNOME
-echo -e "\e[32mConfigurando DeepSeek...\e[0m"
-pip install deepseek-integration
-
-# Creación de usuario y contraseña
-while true; do
-    echo -e "\e[32mIntroduce el nombre de usuario:\e[0m"
-    read -r USERNAME
-    if ! id "$USERNAME" >/dev/null 2>&1; then
-        break
-    fi
-    echo -e "\e[31mEl usuario ya existe. Por favor, introduce otro nombre.\e[0m"
-done
-
-while true; do
-    echo -e "\e[32mIntroduce la contraseña para el usuario $USERNAME:\e[0m"
-    read -r PASSWORD
-    if [[ "$PASSWORD" != "" ]]; then
-        break
-    fi
-    echo -e "\e[31mLa contraseña no puede estar vacía.\e[0m"
-done
-
-sudo useradd -m -p $(openssl passwd -6 -s "$PASSWORD") "$USERNAME"
-
-# Configuración de sudo para el usuario
-echo -e "\e[32mConfigurando permisos de sudo...\e[0m"
-sudo sh -c "echo \"$USERNAME    ALL=(ALL) ALL\" >> /etc/sudoers"
-
-# Configuración del sistema híbrido Android/Linux
-echo -e "\e[32mConfigurando entorno Android/Linux...\e[0m"
-sudo android-sdk start-wallet --keypass none
-
-# Configuración de RAID automática si detecta múltiples discos duros
-if [ $(lsblk | grep -c disk) -gt 1 ]; then
-    echo -e "\e[32mConfigurando RAID...\e[0m"
-    # Ejemplo: Configurar un striped volume (ajusta los dispositivos según tus necesidades)
-    sudo mdadm --create --verbose /dev/md0 --level=stripe --name="RAID-Striped" \
-        --chunk=512 $(lsblk -d | grep disk | awk '{print $1}') 2>/dev/null
+# --- Particionado ---
+echo -e "${YELLOW}→ Creando particiones...${NC}"
+if [[ "$BOOT_MODE" == "UEFI" ]]; then
+  parted -s "/dev/$DISK" mklabel gpt
+  parted -s "/dev/$DISK" mkpart ESP fat32 1MiB 513MiB
+  parted -s "/dev/$DISK" set 1 esp on
+  parted -s "/dev/$DISK" mkpart primary ext4 513MiB 100%
+  mkfs.fat -F32 "${DISK_PATH}1"
+  mkfs.ext4 -F "$ROOT_PART"
+  mount "$ROOT_PART" /mnt
+  mkdir -p /mnt/boot/efi
+  mount "${DISK_PATH}1" /mnt/boot/efi
+else
+  # Configuración para BIOS (MBR)
+  parted -s "/dev/$DISK" mklabel msdos
+  parted -s "/dev/$DISK" mkpart primary ext4 1MiB 100%
+  parted -s "/dev/$DISK" set 1 boot on
+  mkfs.ext4 "${DISK_PATH}1"
+  mount "${DISK_PATH}1" /mnt
 fi
 
-# Configuración de autenticación SSH y firewall
-echo -e "\e[32mConfigurando seguridad SSH...\e[0m"
-sudo systemctl enable sshd --now
-sudo ufw allow ssh
-sudo ufw default deny incoming
-sudo ufw --force enable
+# --- Instalación base ---
+echo -e "${YELLOW}→ Instalando sistema base...${NC}"
+pacstrap /mnt base linux-zen linux-zen-headers linux-firmware git
 
-# Mensaje final de éxito
-echo -e "\e[34mInstalación completada con éxito!\e[0m"
+# --- Configuración post-instalación ---
+echo -e "${YELLOW}→ Configurando sistema...${NC}"
+genfstab -U /mnt >> /mnt/etc/fstab
+
+arch-chroot /mnt /bin/bash <<EOF
+# Configuración básica
+echo "archdroid" > /etc/hostname
+ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
+
+# Instalar yay desde Git
+echo -e "${YELLOW}→ Instalando yay...${NC}"
+git clone https://aur.archlinux.org/yay.git /tmp/yay
+cd /tmp/yay
+makepkg -si --noconfirm
+
+# Paquetes esenciales
+echo -e "${YELLOW}→ Instalando componentes clave...${NC}"
+yay -Syu --noconfirm --needed \\
+  calamares gnome gnome-tweaks gnome-shell-extensions \\
+  waydroid mesa vulkan-intel flatpak appimagelauncher \\
+  zram-generator tensorflow python-rasa
+
+# Temas y extensiones de GNOME
+echo -e "${YELLOW}→ Configurando GNOME...${NC}"
+yay -S --noconfirm gnome-shell-extension-dash-to-panel gnome-shell-extension-arc-menu adwaita-icon-theme
+sudo -u archdroid dbus-launch gsettings set org.gnome.desktop.interface gtk-theme "Adwaita-dark"
+sudo -u archdroid dbus-launch gsettings set org.gnome.shell.extensions.dash-to-panel panel-position 'BOTTOM'
+sudo -u archdroid dbus-launch gsettings set org.gnome.shell.extensions.arc-menu menu-layout 'Eleven'
+
+# Configurar Binder y módulos
+echo -e "${YELLOW}→ Habilitando soporte para Android...${NC}"
+echo "binder_linux" > /etc/modules-load.d/binder.conf
+echo "loop" > /etc/modules-load.d/loop.conf
+
+# Optimización con zRAM
+echo -e "${YELLOW}→ Configurando zRAM...${NC}"
+systemctl enable systemd-zram-setup@zram0
+echo "vm.swappiness=10" >> /etc/sysctl.d/99-archdroid.conf
+
+# Instalar GRUB
+echo -e "${YELLOW}→ Instalando gestor de arranque...${NC}"
+if [[ "$BOOT_MODE" == "UEFI" ]]; then
+  grub-install --target=x86_64-efi --efi-directory=/boot/efi
+else
+  grub-install --target=i386-pc "/dev/$DISK"
+fi
+grub-mkconfig -o /boot/grub/grub.cfg
+
+# Google Play Store (opcional)
+read -p "¿Instalar Google Play Store? (s/n): " USE_GAPPS
+if [[ "\$USE_GAPPS" == "s" ]]; then
+  echo -e "${YELLOW}→ Configurando Waydroid con GAPPS...${NC}"
+  yay -S --noconfirm waydroid-models
+  waydroid init -s GAPPS -f
+fi
+
+# Limpieza final
+echo -e "${YELLOW}→ Limpiando caché...${NC}"
+yay -Scc --noconfirm
+EOF
+
+echo -e "${GREEN}✓ Instalación completada. Ejecuta 'reboot' para reiniciar.${NC}"

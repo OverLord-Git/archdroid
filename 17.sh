@@ -52,7 +52,6 @@ if [[ "$BOOT_MODE" == "UEFI" ]]; then
   mkdir -p /mnt/boot/efi
   mount "${DISK_PATH}1" /mnt/boot/efi
 else
-  # Configuración para BIOS (MBR)
   parted -s "/dev/$DISK" mklabel msdos
   parted -s "/dev/$DISK" mkpart primary ext4 1MiB 100%
   parted -s "/dev/$DISK" set 1 boot on
@@ -69,53 +68,52 @@ echo -e "${YELLOW}→ Configurando sistema...${NC}"
 genfstab -U /mnt >> /mnt/etc/fstab
 
 arch-chroot /mnt /bin/bash <<EOF
-# Configuración básica
+# --- Configuración básica ---
 echo "archdroid" > /etc/hostname
 ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
 
-# --- Crear usuario y configurar sudo sin contraseña ---
+# --- Creación interactiva de usuario ---
 read -p "Introduce el nombre de usuario: " USERNAME
 useradd -m -G wheel "\$USERNAME"
 echo -e "${YELLOW}→ Estableciendo contraseña para \$USERNAME...${NC}"
 passwd "\$USERNAME"
 
-# Habilitar sudo sin contraseña para wheel
-echo -e "${YELLOW}→ Configurando sudo...${NC}"
-echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel-nopasswd
-chmod 0440 /etc/sudoers.d/wheel-nopasswd
+# --- Configurar sudo sin contraseña ---
+echo -e "${YELLOW}→ Configurando privilegios sudo...${NC}"
+echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/10-wheel-nopasswd
+chmod 440 /etc/sudoers.d/10-wheel-nopasswd
 
-# Instalar yay desde Git
-echo -e "${YELLOW}→ Instalando yay...${NC}"
-git clone https://aur.archlinux.org/yay.git /tmp/yay
+# --- Instalar yay como usuario normal ---
+echo -e "${YELLOW}→ Instalando yay desde AUR...${NC}"
+sudo -u "\$USERNAME" git clone https://aur.archlinux.org/yay.git /tmp/yay
 cd /tmp/yay
 sudo -u "\$USERNAME" makepkg -si --noconfirm
 
-# Paquetes esenciales
-echo -e "${YELLOW}→ Instalando componentes clave...${NC}"
+# --- Paquetes principales ---
+echo -e "${YELLOW}→ Instalando componentes del sistema...${NC}"
 yay -Syu --noconfirm --needed \\
   calamares gnome gnome-tweaks gnome-shell-extensions \\
   waydroid mesa vulkan-intel flatpak appimagelauncher \\
   zram-generator tensorflow python-rasa
 
-# Temas y extensiones de GNOME
-echo -e "${YELLOW}→ Configurando GNOME...${NC}"
-yay -S --noconfirm gnome-shell-extension-dash-to-panel gnome-shell-extension-arc-menu adwaita-icon-theme
-sudo -u "\$USERNAME" dbus-launch gsettings set org.gnome.desktop.interface gtk-theme "Adwaita-dark"
+# --- Configurar GNOME ---
+echo -e "${YELLOW}→ Personalizando entorno GNOME...${NC}"
+sudo -u "\$USERNAME" dbus-launch gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita-dark'
 sudo -u "\$USERNAME" dbus-launch gsettings set org.gnome.shell.extensions.dash-to-panel panel-position 'BOTTOM'
 sudo -u "\$USERNAME" dbus-launch gsettings set org.gnome.shell.extensions.arc-menu menu-layout 'Eleven'
 
-# Configurar Binder y módulos
+# --- Configurar Android ---
 echo -e "${YELLOW}→ Habilitando soporte para Android...${NC}"
 echo "binder_linux" > /etc/modules-load.d/binder.conf
 echo "loop" > /etc/modules-load.d/loop.conf
 
-# Optimización con zRAM
+# --- Optimización de memoria ---
 echo -e "${YELLOW}→ Configurando zRAM...${NC}"
 systemctl enable systemd-zram-setup@zram0
 echo "vm.swappiness=10" >> /etc/sysctl.d/99-archdroid.conf
 
-# Instalar GRUB
-echo -e "${YELLOW}→ Instalando gestor de arranque...${NC}"
+# --- Instalar GRUB ---
+echo -e "${YELLOW}→ Configurando gestor de arranque...${NC}"
 if [[ "$BOOT_MODE" == "UEFI" ]]; then
   grub-install --target=x86_64-efi --efi-directory=/boot/efi
 else
@@ -123,7 +121,7 @@ else
 fi
 grub-mkconfig -o /boot/grub/grub.cfg
 
-# Google Play Store (opcional)
+# --- Google Play Store (opcional) ---
 read -p "¿Instalar Google Play Store? (s/n): " USE_GAPPS
 if [[ "\$USE_GAPPS" == "s" ]]; then
   echo -e "${YELLOW}→ Configurando Waydroid con GAPPS...${NC}"
@@ -131,9 +129,10 @@ if [[ "\$USE_GAPPS" == "s" ]]; then
   waydroid init -s GAPPS -f
 fi
 
-# Limpieza final
-echo -e "${YELLOW}→ Limpiando caché...${NC}"
+# --- Limpieza final ---
+echo -e "${YELLOW}→ Eliminando archivos temporales...${NC}"
 yay -Scc --noconfirm
+rm -rf /tmp/*
 EOF
 
-echo -e "${GREEN}✓ Instalación completada. Ejecuta 'reboot' para reiniciar.${NC}"
+echo -e "\n${GREEN}✓ Instalación completada. Reinicia con: 'reboot'${NC}"

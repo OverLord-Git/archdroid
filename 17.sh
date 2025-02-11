@@ -80,8 +80,8 @@ chmod 440 /mnt/etc/sudoers.d/10-wheel-nopasswd
 
 # --- Instalar yay como usuario normal ---
 echo -e "${YELLOW}→ Instalando yay desde AUR...${NC}"
-arch-chroot /mnt sudo -u "$USERNAME" git clone https://aur.archlinux.org/yay.git /tmp/yay
-arch-chroot /mnt bash -c "cd /tmp/yay && sudo -u $USERNAME makepkg -si --noconfirm"
+arch-chroot /mnt sudo -u "$USERNAME" git clone https://aur.archlinux.org/yay.git /home/"$USERNAME"/yay
+arch-chroot /mnt bash -c "cd /home/$USERNAME/yay && sudo -u $USERNAME makepkg -si --noconfirm"
 
 # --- Paquetes principales ---
 echo -e "${YELLOW}→ Instalando componentes del sistema...${NC}"
@@ -126,6 +126,6 @@ fi
 # --- Limpieza final ---
 echo -e "${YELLOW}→ Eliminando archivos temporales...${NC}"
 arch-chroot /mnt yay -Scc --noconfirm
-rm -rf /mnt/tmp/*
+rm -rf /mnt/home/"$USERNAME"/yay
 
 echo -e "\n${GREEN}✓ Instalación completada. Reinicia con: 'reboot'${NC}"

@@ -39,24 +39,38 @@ partition_disk() {
   DISK=$1
   log "Iniciando particionado en $DISK..."
 
+  # Limpiar disco
+  wipefs -a $DISK
+
+  # Esquema para UEFI
   if [ "$BOOT_MODE" = "uefi" ]; then
     parted $DISK mklabel gpt
     parted $DISK mkpart ESP fat32 1MiB 513MiB
     parted $DISK set 1 esp on
     parted $DISK mkpart primary btrfs 513MiB 100%
+    PART_BOOT="${DISK}p1"
+    PART_ROOT="${DISK}p2"
   else
+    # Esquema para BIOS
     parted $DISK mklabel msdos
     parted $DISK mkpart primary ext4 1MiB 513MiB
     parted $DISK set 1 boot on
     parted $DISK mkpart primary btrfs 513MiB 100%
+    PART_BOOT="${DISK}1"
+    PART_ROOT="${DISK}2"
   fi
 
+  # Formatear particiones
   if [ "$BOOT_MODE" = "uefi" ]; then
-    mkfs.fat -F32 ${DISK}1
+    log "Formateando ${PART_BOOT} como FAT32..."
+    mkfs.fat -F32 $PART_BOOT
   else
-    mkfs.ext4 ${DISK}1
+    log "Formateando ${PART_BOOT} como ext4..."
+    mkfs.ext4 $PART_BOOT
   fi
-  mkfs.btrfs -f ${DISK}2
+
+  log "Formateando ${PART_ROOT} como Btrfs..."
+  mkfs.btrfs -f $PART_ROOT
 
   log "Particionado completado."
 }
@@ -92,6 +106,7 @@ install_packages() {
 
 # ===== CONFIGURACIÓN POST-INSTALACIÓN =====
 configure_system() {
+  log "Configurando sistema..."
   genfstab -U /mnt >> /mnt/etc/fstab
   arch-chroot /mnt ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime
   arch-chroot /mnt hwclock --systohc
@@ -101,7 +116,7 @@ configure_system() {
   echo "KEYMAP=us" > /mnt/etc/vconsole.conf
 
   if [ "$BOOT_MODE" = "uefi" ]; then
-    arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot
+    arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=HybridOS
   else
     arch-chroot /mnt grub-install --target=i386-pc $DISK
   fi
@@ -113,7 +128,7 @@ configure_system() {
 # ===== EJECUCIÓN PRINCIPAL =====
 main() {
   detect_hardware
-  DISK=$(whiptail --inputbox "Introduzca el disco a particionar (ej: /dev/sda):" 10 50 3>&1 1>&2 2>&3)
+  DISK=$(whiptail --inputbox "Introduzca el disco a particionar (ej: /dev/nvme0n1):" 10 50 3>&1 1>&2 2>&3)
   partition_disk $DISK
   install_packages
   configure_system

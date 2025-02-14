@@ -1,0 +1,485 @@
+Chrome OS devices/Crostini - ArchWiki
+
+Crostiniis Google's umbrella term for making Linux application support easy to use and integrating well with Chrome OS.
+
+This article describes how to install Arch Linux on a Chromebook in a container (via Crostini), without needing to enable developer mode, allowing apps to run alongside other Chrome/Android apps.
+
+Highlights:
+
+Officially supported, do not need to enable developer mode - leaves Chrome OS secure, no need to flash a BIOS etc.
+
+Better battery life - battery life of Chrome with the functionality of Linux.
+
+Audio (in/out) & OpenGL are supported, but USB devices are only partially supported and development is still in progress.
+
+Introduction
+
+Enabling Linux support
+
+Look for Linux under Settings and enable it. This installs a Debian Linux container that we will then replace with an Arch Linux container.
+
+Settings > Linux > Enable
+
+Crostini is still rolling out to Chromebooks. If you do not see an option to enable Linux, you may need to switch to the beta or developer channel, if it has not rolled out to the stable channel for your laptop yet. This can be done viaSettings > About Chrome OS > Channel > Dev/Beta.
+
+Replacing the default Debian Linux container with Arch Linux
+
+The below instructions were initially based onhttps://www.reddit.com/r/Crostini/wiki/howto/run-arch-linux?v=2d4c6b4c-bbb0-11e8-8f2f-0e740b2a8a8c.
+
+Optional: Delete the Debian container
+
+Warning:
+
+For the time being of Chrome 87, starting a vmc with a custom lxc image makes Termina think it is invalid and delete it.lxc delete penguin
+
+should not leave the space unusable. See[1]
+
+If you have no use for Debian anymore, you can save some storage space by destroying and recreating the Termina VM (this will let you skip renaming / deleting existing container later). Beware this will also delete any other containers you may have under Termina.
+
+Warning:Destroying the existing termina may also disable android apps and the play store.
+
+Open the crosh terminal in Chrome (Ctrl+Alt+t).
+
+vmc destroy termina
+vmc start termina
+
+Create the container
+
+Open a new crosh terminal in Chrome (Ctrl+Alt+t). Enter termina using:
+
+vsh termina
+
+Now you need to replace the defaultimagesremote:
+
+lxc remote remove images
+lxc remote add images https://images.lxd.canonical.com/ --protocol=simplestreams
+
+Then create the Arch Linux container:
+
+lxc launch images:archlinux arch --config security.privileged=true
+
+Rename Arch to penguin
+
+lxc stop arch --force
+lxc rename arch penguin
+
+Open a shell in Termina and check if the Arch Linux container is present (it may a few minutes to show on the list):
+
+lxc list
+
+If the container is not started, start it:
+
+lxc start arch
+
+Launch a bash shell in the container:
+
+lxc exec arch -- bash
+
+Now you can use pacman
+
+pacman -Syu
+pacman -S pacman-contrib
+pacman -S reflector
+pacman -S rsync
+
+
+reflector -a10 -c us -f 5 short rate --save /ect/pacman.d/mirrorlist
+
+
+Set up the user
+
+The container creates a default user on install based on the email used to sign in to Chrome OS. The username can be seen with the following command:
+
+grep 1000:1000 /etc/passwd|cut -d':' -f1
+
+Add User:
+
+useradd -m username
+
+Set Password:
+
+passwd username
+new password
+retype new password
+
+EnableLinger for User:
+
+systemctl unmask systemd-logind
+loginctl enable-linger overlord
+
+Enable Sudo:
+
+EDITOR=nano visudo
+Uncomment the following line to allow the wheel group to use sudo:
+# %wheel ALL=(ALL) NOPASSWD ALL
+
+Add your user to the wheel group:
+
+# usermod -aG wheel username
+
+
+Check Network Connection:
+
+ip -4 a show dev eth0
+
+Use dhclient to auto connect:
+
+pacman -Syu dhclient
+systemctl enable --now dhclient@eth0
+
+exit
+
+Log in into user account:
+
+lxc exec arch su - username
+
+Install yay:
+
+sudo pacman -S --needed base-devel git curl make wl-clipboard fish neovim
+git clone https://aur.archlinux.org/yay.git
+cd yay
+makepkg -si
+
+Install Cros-Container:
+
+yay -S cros-container-guest-tools-git
+
+Make sound Work:
+
+cp -r /etc/skel/.config/pulse ~/.config/pulse
+
+Install Xorg Wayland:
+
+yay -S xorg-xwayland
+
+exit
+
+
+Log in again in container:
+
+lxc console  penguin
+
+Enable some features:
+
+systemctl enable cros-sftp
+systemctl enable --now --user sommelier{,-x}@{0,1}.service
+or
+systemctl enable --now --user sommelier@0.service
+systemctl enable --now --user sommelier-x@0.service
+systemctl enable --now --user sommelier-x@1.service
+systemctl enable --now --user sommelier@1.service
+
+sudo nano /ect/pacman.conf
+----------------------------------------------------------------------------------------------------
+Optionally you can rename user/group, by default named by your GMail id:
+
+# pkill -9 -u old-username
+# groupmod -n new-username old-username
+# usermod -d /home/new-username-l new-username-m -cn ew-username old-username
+
+A password needs setting for the user:
+
+# passwd username
+
+You may additionally want to installsudoand add the user to the wheel group. Use after installation:
+
+# visudo
+
+Uncomment the following line to allow the wheel group to use sudo:
+
+# %wheel ALL=(ALL) ALL
+
+Add your user to the wheel group:
+
+# usermod -aG wheel username
+
+Leave the container:
+
+# exit
+
+Set up the container for use in Chrome OS
+
+Login to the container using regular user account you just configured:
+
+lxc console arch
+
+Verify networking in the container. The command
+
+$ ip -4 a show dev eth0
+
+should return a non-empty output with the container's assigned IP address. If it is not empty, you can proceed, otherwise you are facing the issue described in#No network in container- follow the instructions listed there to address the issue.
+
+Install the Crostini container tools, Wayland for GUI application support and Xwayland for X11 application support:
+
+Installthecros-container-guest-tools-gitAURpackage. Additionally installwaylandandxorg-xwaylandto be able to use GUI tools.
+
+Start/enablethe following user units:
+
+Template instance
+
+Purpose
+
+sommelier@0.service
+
+Wayland
+
+sommelier-x@0.service
+
+X11
+
+sommelier@1.service
+
+Wayland (low density)
+
+sommelier-x@1.service
+
+X11 (low density)
+
+Make sure these user services are running successfully by checking theirunit statuses. Now, when apps are installed in Arch Linux, they will automatically appear in the Chrome OS launcher. Exit from the container shell back to the Termina shell by pressingCtrl+aq.
+
+Replace the default Debian container with Arch Linux
+
+The default Debian container is named penguin. Renaming the "arch" container created above to it will cause Chrome OS to launch Linux apps from the arch container. Stop the Arch Linux container:
+
+lxc stop --force arch
+
+Stop the Debian container and rename it to "debian" (this step can be skipped if you have already removed the Debian container):
+
+lxc stop --force penguin
+lxc rename penguin debian
+
+Rename the Arch container to "penguin" and start it:
+
+lxc rename arch penguin
+lxc start penguin
+
+Restart the Linux subsystem to apply the changes. After restart, verify that nofailed system or user unitsare listed.
+
+The following command should report the IP address assigned for container:
+
+ip -4 a show dev eth0
+
+Troubleshooting
+
+Tip:Check the Chromium OS Garcon Bridge (journalctl --user -u cros-garcon) for host integration issues, like "Linux files is empty in the Files app" or "Applications do not appear on Chrome OS".
+
+Arch container fails to start after update to Chrome OS 81
+
+Most of custom containers stopped working with Chrome OS 81 update. The root cause is a LXC version update, as a result, the container fails to start with following error:
+
+lxc penguin 20200411193357.312 WARN initutils - initutils.c:setproctitle:324 - Invalid argument - Failed to set cmdline
+lxc penguin 20200411193357.395 WARN conf - conf.c:lxc_map_ids:2919 - newuidmap is lacking necessary privileges
+lxc penguin 20200411193357.395 WARN conf - conf.c:lxc_map_ids:2925 - newgidmap is lacking necessary privileges
+lxc penguin 20200411193357.400 WARN conf - conf.c:lxc_map_ids:2919 - newuidmap is lacking necessary privileges
+lxc penguin 20200411193357.400 WARN conf - conf.c:lxc_map_ids:2925 - newgidmap is lacking necessary privileges
+lxc penguin 20200411193357.477 ERROR conf - conf.c:run_buffer:335 - Script exited with status 32
+lxc penguin 20200411193357.477 ERROR conf - conf.c:lxc_setup:3589 - Failed to run mount hooks
+lxc penguin 20200411193357.477 ERROR start - start.c:do_start:1263 - Failed to setup container "penguin"
+lxc penguin 20200411193357.478 ERROR sync - sync.c:__sync_wait:62 - An error occurred in another process (expected sequence number 5)
+lxc penguin 20200411193357.478 WARN network - network.c:lxc_delete_network_priv:2561 - Failed to rename interface with index 17 from "eth0" to its initial name "veth421fa9d1"
+lxc penguin 20200411193357.478 ERROR lxccontainer - lxccontainer.c:wait_on_daemonized_start:842 - Received container state "ABORTING" instead of "RUNNING"
+lxc penguin 20200411193357.479 ERROR start - start.c:__lxc_start:1939 - Failed to spawn container "penguin"
+lxc penguin 20200411193357.701 WARN conf - conf.c:lxc_map_ids:2919 - newuidmap is lacking necessary privileges
+lxc penguin 20200411193357.701 WARN conf - conf.c:lxc_map_ids:2925 - newgidmap is lacking necessary privileges
+lxc 20200411193357.706 WARN commands - commands.c:lxc_cmd_rsp_recv:132 - Connection reset by peer - Failed to receive response for command "get_state"
+lxc 20200411193357.707 WARN commands - commands.c:lxc_cmd_rsp_recv:132 - Connection reset by peer - Failed to receive response for command "get_state"
+
+Solution
+
+Navigate to crosh and execute the following commands:
+
+vmc start termina
+vsh termina
+lxc file delete penguin/var/lib/lxc
+lxc file delete penguin/var/lib/lxcfs
+
+Restart Linux subsystem and container started should start normally.
+
+No network in container
+
+The factual accuracy of this article or section is disputed.
+
+Reason:
+
+In systemd v249, the problem seems to have disappeared, and everything works as it should. However, in systemd v250, the problem seems to appear again. The above claims regarding v249 and v250 need to be confirmed with more user reports. (Discuss inTalk:Chrome OS devices/Crostini
+
+)
+
+As was reported by multiple sources, systemd-networkd and systemd-resolved services in systemd-244.1 are not working properly for unprivileged LXC containers, which ends up in missing network connectivity inside the Crostini container. Users may see only IPv6 address but no IPv4 address for thearchcontainer (for example, usingip acommand).
+
+One possible solution is stated here:LXD#No IPv4 with systemd-networkd.
+
+Alternatively, another solution is to completely disable systemd-networkd/systemd-resolved and perform network configuration bydhclientservice instead. First, installdhclient, then, as the root user, run:
+
+dhcpcd eth0
+systemctl disable systemd-networkd
+systemctl disable systemd-resolved
+unlink /etc/resolv.conf
+touch /etc/resolv.conf
+systemctl enable dhclient@eth0
+systemctl start dhclient@eth0
+
+NetworkManageranddhcpcdalso can be used to address the issue if you prefer them over thedhclientsolution.
+
+Permission denied with ping
+
+If you get
+
+ping: socket: permission denied
+
+when trying to ping from a user other thanroot, you need to set thecapabilityflag on the/usr/bin/pingfile to fix it.
+
+# setcap cap_net_raw+ep /usr/bin/ping
+
+This should solve the problem. SeeFS#63710.
+
+App not opening in chrome OS (infinite spinner)
+
+I found that launching a console (lxc console penguin) session prevents apps from launching in Chrome OS. Launching results in an infinite spinner. In that case, I have to stop and start the container to get the Chrome OS launcher working
+
+lxc stop penguin
+lxc start penguin
+
+Instead of using an lxc console session, I use a regular Linux terminal GUI launched from Chrome OS that prevents this issue.
+
+Audio playback/input
+
+Crostini support audio playback starting Chrome OS 74. Withcros-container-guest-tools-gitAURinstalled both ALSA and PulseAudio playback should work after PulseAudio configuration. Audio input is supported starting Chrome OS 79.
+
+Enter the following command in the container (in case you did not):
+
+$ cp -rT /etc/skel/.config/pulse ~/.config/pulse
+
+It is also possible to usePipeWireinstead of PulseAudio. Put the following file into/etc/pipewire/pipewire.conf.d:
+
+/etc/pipewire/pipewire.conf.d/crostini-audio.conf
+
+context.objects = [
+{ factory = adapter
+args = {
+factory.name = api.alsa.pcm.sink
+node.name = "Virtio Soundcard Sink"
+media.class = "Audio/Sink"
+api.alsa.path = "hw:0,0"
+audio.channels = 2
+audio.position = "FL,FR"
+}
+}
+{ factory = adapter
+args = {
+factory.name = api.alsa.pcm.source
+node.name = "Virtio Soundcard Source"
+media.class = "Audio/Source"
+api.alsa.path = "hw:0,0"
+audio.channels = 2
+audio.position = "FL,FR"
+}
+}
+]
+
+Video playback
+
+mpvcan play videos using software rendering without any addition configuration, however this is CPU consuming and laggy experience for modern video codecs like H265. For hardware accelerated playback GPU acceleration is required. Take into account, that GPU acceleration for Crostini is based onVirGL, so no real GPU device pass-though is performed and hardware-specific APIs like VA-API or VPDAU are not available. However OpenGL acceleration can be used, i.e. this is example ofmpv.confwhich enabled accelerated video and audio playback on Google Pixelbook starting Chrome OS 77:
+
+vo=gpu
+ao=alsa
+
+GPU acceleration
+
+On Google Pixelbook GPU acceleration works with Arch out-of-the-box starting Chrome OS 77. Also no flags need to be enabled on recent released of Chrome OS:
+
+$ glxinfo -B
+
+name of display: :0
+display: :0 screen: 0
+direct rendering: Yes
+Extended renderer info (GLX_MESA_query_renderer):
+Vendor: Red Hat (0x1af4)
+Device: virgl (0x1010)
+Version: 19.1.4
+--> Accelerated: yes <--
+Video memory: 0MB
+Unified memory: no
+Preferred profile: core (0x1)
+Max core profile version: 4.3
+Max compat profile version: 3.1
+Max GLES1 profile version: 1.1
+Max GLES[23] profile version: 3.2
+OpenGL vendor string: Red Hat
+OpenGL renderer string: virgl
+OpenGL core profile version string: 4.3 (Core Profile) Mesa 19.1.4
+OpenGL core profile shading language version string: 4.30
+OpenGL core profile context flags: (none)
+OpenGL core profile profile mask: core profile
+
+OpenGL version string: 3.1 Mesa 19.1.4
+OpenGL shading language version string: 1.40
+OpenGL context flags: (none)
+
+OpenGL ES profile version string: OpenGL ES 3.2 Mesa 19.1.4
+OpenGL ES profile shading language version string: OpenGL ES GLSL ES 3.20
+
+Unlock the keyring when starting the container
+
+If you have problems with programs that usegnome-keyring-daemon, you need to write a user systemd daemon (seeSystemd/User#Writing user units) that will run the keyring daemon when the container starts.
+
+Create the following two files:
+
+/etc/systemd/user/gnome-keyring.service
+
+[Unit]
+Description=Keyring
+
+[Service]
+ExecStart=/usr/local/bin/export-keys
+KillUserProcesses=no
+
+[Install]
+WantedBy=default.target
+
+Warning:Leaving the password in plain text is potentially dangerous. You can replaceecho random-passwordwithcat ~/.passwordby creating the appropriate file in your home folder.
+
+/usr/local/bin/export-keys
+
+#!/bin/bash
+killall gnome-keyring-daemon
+echo random-password | gnome-keyring-daemon --components=secrets,ssh,pkcs11 --unlock --foreground
+
+Give the file launch rights:
+
+# chmod a+x /usr/local/bin/export-keys
+
+Then,start/enablethegnome-keyring.serviceuser unit and run
+
+$ echo -n login > ~/.local/share/keyrings/default
+
+Fullscreen video, games and mouse capture
+
+Currently Crostini has limited support for mouse capture starting with Chrome OS 79. You must enable the flag chrome://flags/#exo-pointer-lock to get mouse capture. The closed issue relating to mouse capture ishttps://bugs.chromium.org/p/chromium/issues/detail?id=927521.
+
+"Linux Files" is empty on host
+
+If you find the "Linux Files" directory on host is always empty and see the following logs in the guest Arch Linux, then you might be affected.
+
+Feb 24 21:18:23 penguin garcon[183]: [183]: sftp: accepted connection from vsock:2:3162708311
+Feb 24 21:18:23 penguin garcon[183]: [183]: Failed to execute requested program in child process: No such file or directory
+Feb 24 21:18:23 penguin garcon[183]: [183]: sftp: failed to spawn child process: No child processes (10)
+
+Since2022-06, garcon launches the sftp server with/usr/lib/openssh/sftp-server, while theopensshpackage installs the binary at/usr/lib/ssh/sftp-server. A workaround is linking the path expected by garcon to the installed one:
+
+# mkdir /usr/lib/openssh/
+# ln -s /usr/lib/ssh/sftp-server /usr/lib/openssh/sftp-server
+
+Firefox laggy clicking, scrolling & videos
+
+If firefox is exhibiting extremely laggy behavior when clicking on the address bar, scrolling, selecting text etc, and or playing lagged or choppy videos, running firefox with MOZ_ENABLE_WAYLAND=1 may resolve this. Inside firefox, about:support should show "Window Protocol" as wayland after this.
+
+MOZ_ENABLE_WAYLAND=1 firefox
+
+See also
+
+Running Custom Containers Under Chrome OS
+
+/r/Crostini
+
+Powerline Web Fonts for Chromebook

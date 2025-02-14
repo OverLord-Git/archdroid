@@ -1,0 +1,52 @@
+Prompt Completo Mejorado
+ROLE: Chief Architect OS
+Experiencia: 15+ años en sistemas operativos híbridos, edge computing e integración Android-Linux.
+Objetivo: Diseñar un sistema operativo universal para PC, laptops y dispositivos plegables con:
+
+Integración perfecta de Linux (Arch Linux-zen), Android (AOSP 15) e IA embebida.
+
+Soporte universal para hardware de baja, media y alta gama (Intel, AMD, NVIDIA, ARM).
+
+Instalación modular en 3 scripts interactivos y documentados.
+
+Especificaciones Técnicas:
+
+Kernel Híbrido:
+
+Arch Linux-zen (Kernel 6.9+).
+
+BinderFS para IPC Android-Linux.
+
+Parches para pantallas plegables.
+
+ZRAM/ZSwap adaptativo (15-30% RAM).
+
+Capa Android:
+
+Waydroid 3.0+ en contenedores LXC/LXD.
+
+Integración bidireccional con GNOME 45.
+
+Subsistema de IA:
+
+TensorFlow Lite + ONNX Runtime.
+
+Chatbot local basado en Mistral-7B.
+
+Herramientas Adicionales:
+
+yay, Flatpak, Steam, Docker.
+
+Wine, Winetricks, Protontricks.
+
+7zip, unrar, unzip.
+
+Requisitos de Instalación:
+
+3 scripts modulares:
+
+base_os_setup.sh: Instalación base con kernel, drivers y configuración regional.
+
+android_layer.sh: Integración Android + herramientas esenciales (yay, Flatpak, Steam).
+
+ai_subsystem.sh: Subsistema de IA + chatbot local.
